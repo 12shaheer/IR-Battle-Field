@@ -1,5 +1,5 @@
-const SERVER_URL = 'http://localhost:3001';
-const WS_URL = 'ws://localhost:3001';
+const SERVER_URL = 'https://pacific-spirit-production-b3f8.up.railway.app';
+const WS_URL = 'wss://pacific-spirit-production-b3f8.up.railway.app';
 
 export const callFunction = async (name, data) => {
   const res = await fetch(`${SERVER_URL}/${name}`, {
