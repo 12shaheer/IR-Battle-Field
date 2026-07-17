@@ -1,10 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useGame } from '../context/GameContext';
 import MiniMap from '../components/MiniMap';
 
 export default function EliminatedScreen({ navigation }) {
   const { sessionData, playerData, players } = useGame();
+  const [secondsLeft, setSecondsLeft] = useState(60);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     if (sessionData?.status === 'ended') {
@@ -12,15 +14,27 @@ export default function EliminatedScreen({ navigation }) {
     }
   }, [sessionData?.status]);
 
-  // If player gets revived, go back to game
   useEffect(() => {
     if (playerData?.status === 'alive' && playerData?.health > 0) {
       navigation.replace('GameHUD');
     }
   }, [playerData?.status, playerData?.health]);
 
+  useEffect(() => {
+    const respawnAt = playerData?.respawnAt;
+    if (!respawnAt) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [playerData?.respawnAt]);
+
   const eliminatedBy = playerData?.eliminatedBy;
-  const killer = eliminatedBy
+  const killer = eliminatedBy && eliminatedBy !== 'zone'
     ? players.find(p => p.id === eliminatedBy)
     : null;
 
@@ -34,6 +48,11 @@ export default function EliminatedScreen({ navigation }) {
         <Text style={styles.title}>YOU HAVE BEEN</Text>
         <Text style={styles.eliminated}>ELIMINATED</Text>
         <Text style={styles.killedBy}>{eliminatedByText}</Text>
+      </View>
+
+      <View style={styles.respawnBox}>
+        <Text style={styles.respawnLabel}>RESPAWNING IN</Text>
+        <Text style={styles.respawnTimer}>{secondsLeft}s</Text>
       </View>
 
       <View style={styles.stats}>
@@ -56,7 +75,7 @@ export default function EliminatedScreen({ navigation }) {
       />
 
       <Text style={styles.aliveCount}>
-        👥 {players.filter(p => p.status === 'alive').length} remaining
+        {players.filter(p => p.status === 'alive').length} remaining
       </Text>
     </View>
   );
@@ -71,7 +90,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
     color: '#666',
@@ -89,6 +108,26 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 16,
     marginTop: 8,
+  },
+  respawnBox: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+  },
+  respawnLabel: {
+    color: '#00e5ff',
+    fontSize: 12,
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  respawnTimer: {
+    color: '#00e5ff',
+    fontSize: 32,
+    fontWeight: 'bold',
   },
   stats: {
     flexDirection: 'row',

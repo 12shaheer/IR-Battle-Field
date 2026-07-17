@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchPlayers, connectWebSocket } from '../utils/firebase';
+import { fetchPlayers, connectWebSocket } from '../utils/api';
 
 export function usePlayers(sessionId) {
   const [players, setPlayers] = useState([]);

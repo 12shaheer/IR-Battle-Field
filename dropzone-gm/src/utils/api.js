@@ -44,6 +44,3 @@ export function connectWebSocket(onMessage) {
   };
   return ws;
 }
-
-// db export kept as null — hooks no longer use Firestore
-export const db = null;

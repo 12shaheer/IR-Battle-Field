@@ -41,10 +41,8 @@ function checkAndEndGame(sessionId, force = false) {
   const session = sessions[sessionId];
   if (!session || session.status !== 'active') return;
 
-  const alive = Object.values(session.players).filter((p) => p.status === 'alive');
-  // A natural end needs a last player standing; a forced end (GM's End Game
-  // button) proceeds regardless.
-  if (!force && alive.length > 1) return;
+  // With respawns enabled, the game only ends by time or GM force-end.
+  if (!force) return;
 
   session.status = 'ended';
   session.endedAt = Date.now();
@@ -87,6 +85,26 @@ function addEvent(sessionId, event) {
   session.events.unshift(full);
   if (session.events.length > 100) session.events.length = 100;
   broadcast('event', { sessionId, event: full });
+}
+
+const RESPAWN_DELAY_MS = 60000;
+
+function scheduleRespawn(sessionId, playerId) {
+  setTimeout(() => {
+    const session = sessions[sessionId];
+    if (!session || session.status !== 'active') return;
+    const player = session.players[playerId];
+    if (!player || player.status !== 'eliminated') return;
+
+    player.health = 100;
+    player.ammo = player.maxAmmo;
+    player.status = 'alive';
+    player.eliminatedBy = null;
+    player.respawnAt = null;
+
+    addEvent(sessionId, { type: 'player_revived', targetId: playerId, targetName: player.displayName });
+    broadcast('session_update', { sessionId, session });
+  }, RESPAWN_DELAY_MS);
 }
 
 // ─── Game timer + Zone shrink timer ─────────────────────────────────────────
@@ -149,8 +167,9 @@ setInterval(() => {
         player.health = 0;
         player.status = 'eliminated';
         player.eliminatedBy = 'zone';
+        player.respawnAt = Date.now() + RESPAWN_DELAY_MS;
         addEvent(sessionId, { type: 'zone_kill', targetId: player.id, targetName: player.displayName });
-        checkAndEndGame(sessionId);
+        scheduleRespawn(sessionId, player.id);
       } else {
         addEvent(sessionId, { type: 'zone_damage', targetId: player.id, targetName: player.displayName, damage: session.zoneDamage });
       }
@@ -325,7 +344,9 @@ app.post('/processHit', (req, res) => {
     target.health = 0;
     target.status = 'eliminated';
     target.eliminatedBy = shooterId;
+    target.respawnAt = Date.now() + RESPAWN_DELAY_MS;
     shooter.kills++;
+    scheduleRespawn(sessionId, targetId);
   }
 
   addEvent(sessionId, {
@@ -336,8 +357,6 @@ app.post('/processHit', (req, res) => {
     targetName: target.displayName,
     damage,
   });
-
-  if (eliminated) checkAndEndGame(sessionId);
 
   broadcast('session_update', { sessionId, session });
   res.json({ success: true, eliminated, targetHealth: target.health, shooterAmmo: shooter.ammo });

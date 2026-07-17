@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchSession, connectWebSocket } from '../utils/firebase';
+import { fetchSession, connectWebSocket } from '../utils/api';
 
 export function useSession(sessionId) {
   const [session, setSession] = useState(null);

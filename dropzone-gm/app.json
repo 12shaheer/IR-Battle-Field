@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "DropZone GM",
+    "slug": "dropzone-gm",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a1a",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.dropzone.gamemaster",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a1a",
+        "foregroundImage": "./assets/icon.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5e82cd46-6ad8-4db6-b1ed-95fbf18fe1d5"
+      }
+    }
+  }
+}

@@ -4,7 +4,6 @@ import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useGame } from '../context/GameContext';
-import { callFunction } from '../utils/firebase';
 import { decodeTag } from '../game/tags';
 import { tagSpotted } from '../game/targeting';
 import { playSound, loadSounds } from '../utils/sounds';
@@ -14,6 +13,7 @@ import ZoneTimer from '../components/ZoneTimer';
 import DemoMap from '../components/DemoMap';
 import KillFeed from '../components/KillFeed';
 import ShootButton from '../components/ShootButton';
+import HudBattleTag from '../components/HudBattleTag';
 
 export default function GameHUD({ navigation }) {
   const { sessionId, playerId, sessionData, playerData, players, recentEvents, isConnected, selectedCharacter } = useGame();
@@ -21,11 +21,9 @@ export default function GameHUD({ navigation }) {
   const prevHealth = useRef(playerData?.health);
   const hitFlash = useRef(new Animated.Value(0)).current;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [lockedTarget, setLockedTarget] = useState(null); // enemy display name in sights
+  const [lockedTarget, setLockedTarget] = useState(null);
   const lockTimer = useRef(null);
 
-  // Camera reports every QR it sees, many times per second. We only care about
-  // our own DZ: battle tags, belonging to a living enemy in this session.
   const handleBarcodeScanned = ({ data }) => {
     const spottedId = decodeTag(data);
     if (!spottedId || spottedId === playerId) return;
@@ -38,9 +36,6 @@ export default function GameHUD({ navigation }) {
     tagSpotted(enemy.id);
     setLockedTarget(enemy.displayName);
 
-    // The scanner never says "the tag left view" — it just goes quiet. So each
-    // sighting restarts a short countdown; if no new sighting arrives, the
-    // lock indicator drops.
     if (lockTimer.current) clearTimeout(lockTimer.current);
     lockTimer.current = setTimeout(() => setLockedTarget(null), 1500);
   };
@@ -207,14 +202,9 @@ export default function GameHUD({ navigation }) {
         </View>
       </View>
 
-      {/* === TOP RIGHT: Compass === */}
+      {/* === TOP RIGHT: Player's QR battle tag (opponents scan this to hit you) === */}
       <View style={styles.topRight}>
-        <View style={styles.compassContainer}>
-          <Text style={styles.compassText}>N</Text>
-          <View style={styles.compassDiamond}>
-            <Text style={styles.compassArrow}>◈</Text>
-          </View>
-        </View>
+        <HudBattleTag playerId={playerId} />
       </View>
 
       {/* === BOTTOM LEFT: Player character avatar + health bars === */}
@@ -390,31 +380,9 @@ const styles = StyleSheet.create({
   },
   topRight: {
     position: 'absolute',
-    top: 14,
-    right: 14,
+    top: 10,
+    right: 10,
     zIndex: 20,
-  },
-  compassContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  compassText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginRight: 6,
-  },
-  compassDiamond: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  compassArrow: {
-    color: '#00e5ff',
-    fontSize: 16,
   },
   bottomLeft: {
     position: 'absolute',

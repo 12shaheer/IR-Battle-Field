@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchEvents, connectWebSocket } from '../utils/firebase';
+import { fetchEvents, connectWebSocket } from '../utils/api';
 
 export function useEvents(sessionId) {
   const [events, setEvents] = useState([]);
