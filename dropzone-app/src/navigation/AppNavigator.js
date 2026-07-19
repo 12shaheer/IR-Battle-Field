@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import StartScreen from '../screens/StartScreen';
+import MainMenuScreen from '../screens/MainMenuScreen';
 import JoinScreen from '../screens/JoinScreen';
 import LobbyScreen from '../screens/LobbyScreen';
 import GameHUD from '../screens/GameHUD';
@@ -23,6 +24,7 @@ export default function AppNavigator() {
         }}
       >
         <Stack.Screen name="Start" component={StartScreen} />
+        <Stack.Screen name="MainMenu" component={MainMenuScreen} />
         <Stack.Screen name="Join" component={JoinScreen} />
         <Stack.Screen name="Lobby" component={LobbyScreen} />
         <Stack.Screen name="GameHUD" component={GameHUD} />

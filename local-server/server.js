@@ -2,36 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
 const http = require('http');
-const { Pool } = require('pg');
-
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
-
-// ─── PostgreSQL (users) ─────────────────────────────────────────────────────
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-});
-
-async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      username TEXT UNIQUE NOT NULL,
-      date_of_birth TEXT NOT NULL,
-      phone_number TEXT NOT NULL,
-      created_at BIGINT NOT NULL
-    )
-  `);
-  console.log('Database: users table ready');
-}
-
-initDB().catch((err) => console.error('Database init failed:', err.message));
 
 // ─── In-memory data store (sessions only) ───────────────────────────────────
 const sessions = {};
@@ -203,96 +179,6 @@ setInterval(() => {
 }, 1000);
 
 // ─── REST API ────────────────────────────────────────────────────────────────
-
-// Check username availability
-app.post('/checkUsername', async (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'Username required' });
-
-  try {
-    const result = await pool.query(
-      'SELECT 1 FROM users WHERE LOWER(username) = LOWER($1)',
-      [username]
-    );
-    res.json({ available: result.rows.length === 0 });
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Register a new player account
-app.post('/register', async (req, res) => {
-  const { name, username, dateOfBirth, phoneNumber } = req.body;
-
-  if (!name || !username || !dateOfBirth || !phoneNumber) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  if (username.length < 3 || username.length > 20) {
-    return res.status(400).json({ error: 'Username must be 3-20 characters' });
-  }
-
-  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-    return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
-  }
-
-  const userId = generateId();
-  const createdAt = Date.now();
-
-  try {
-    await pool.query(
-      'INSERT INTO users (id, name, username, date_of_birth, phone_number, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
-      [userId, name.trim(), username.trim(), dateOfBirth, phoneNumber.trim(), createdAt]
-    );
-
-    const user = {
-      id: userId,
-      name: name.trim(),
-      username: username.trim(),
-      dateOfBirth,
-      phoneNumber: phoneNumber.trim(),
-      createdAt,
-    };
-
-    res.json({ userId, user });
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Username already taken' });
-    }
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Login (lookup by username)
-app.post('/login', async (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'Username required' });
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM users WHERE LOWER(username) = LOWER($1)',
-      [username]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Account not found' });
-    }
-
-    const row = result.rows[0];
-    const user = {
-      id: row.id,
-      name: row.name,
-      username: row.username,
-      dateOfBirth: row.date_of_birth,
-      phoneNumber: row.phone_number,
-      createdAt: Number(row.created_at),
-    };
-
-    res.json({ userId: row.id, user });
-  } catch (err) {
-    res.status(500).json({ error: 'Database error' });
-  }
-});
 
 // List all sessions
 app.get('/sessions', (req, res) => {
