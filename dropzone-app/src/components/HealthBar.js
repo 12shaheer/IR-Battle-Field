@@ -1,12 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet, Image } from 'react-native';
+import { View, Text, Animated, StyleSheet } from 'react-native';
 import Svg, { Rect, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-const CHARACTER_IMAGES = {
-  homer: require('../../assets/Homer Simpson.jpeg'),
-  peter: require('../../assets/Peter Griffin.jpeg'),
-  gojo: require('../../assets/Satoru Gojo.webp'),
-  inosuke: require('../../assets/Inosuke Hashibira.jpeg'),
+const CHARACTER_LABELS = {
+  velina: 'VL',
 };
 
 export default function HealthBar({ health, maxHealth = 100, characterId }) {
@@ -40,12 +37,11 @@ export default function HealthBar({ health, maxHealth = 100, characterId }) {
     outputRange: ['transparent', 'rgba(255,0,0,0.3)'],
   });
 
-  const avatarSource = characterId ? CHARACTER_IMAGES[characterId] : null;
+  const label = characterId ? CHARACTER_LABELS[characterId] : null;
 
   return (
     <Animated.View style={[styles.container, { backgroundColor }]}>
       <View style={styles.avatarWrapper}>
-        {/* glow lines + blurred gradient sitting above the avatar frame */}
         <View style={styles.glowOverlay} pointerEvents="none">
           <Svg width={58} height={26} viewBox="0 0 58 26">
             <Defs>
@@ -62,13 +58,9 @@ export default function HealthBar({ health, maxHealth = 100, characterId }) {
         </View>
 
         <View style={styles.avatarFrame}>
-          {avatarSource ? (
-            <Image source={avatarSource} style={styles.avatarImage} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarIcon}>👤</Text>
-            </View>
-          )}
+          <View style={styles.avatarPlaceholder}>
+            <Text style={styles.avatarLabel}>{label || '?'}</Text>
+          </View>
         </View>
       </View>
 
@@ -151,12 +143,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#5a5a5a',
   },
 
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-
   avatarPlaceholder: {
     flex: 1,
     justifyContent: 'center',
@@ -164,8 +150,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,150,200,0.2)',
   },
 
-  avatarIcon: {
-    fontSize: 26,
+  avatarLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#29c9e8',
   },
 
   barsContainer: {

@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ImageBackground } from 'react-native';
-
-const backgroundImage = require('../../assets/Intro.jpeg');
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import VideoBackground from '../components/VideoBackground';
 
 export default function StartScreen({ navigation }) {
 
   return (
-    <ImageBackground source={backgroundImage} style={styles.container} resizeMode="cover">
+    <View style={styles.container}>
+      <VideoBackground />
       <View style={styles.overlay}>
         <View style={styles.content}>
           <Text style={styles.logo}>DROPZONE</Text>
@@ -21,7 +21,7 @@ export default function StartScreen({ navigation }) {
           <Text style={styles.buttonText}>TAP TO CONTINUE</Text>
         </TouchableOpacity>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 

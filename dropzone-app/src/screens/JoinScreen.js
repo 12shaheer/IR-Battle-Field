@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,32 +6,26 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  ImageBackground,
-  Image,
-  ScrollView,
 } from 'react-native';
 import { callFunction } from '../utils/firebase';
-import { saveSession } from '../utils/storage';
+import { saveSession, getUser } from '../utils/storage';
 import { useGame } from '../context/GameContext';
-
-const backgroundImage = require('../../assets/Player App background.jpeg');
-
-const CHARACTERS = [
-  { id: 'homer', name: 'Homer Simpson', image: require('../../assets/Homer Simpson.jpeg') },
-  { id: 'peter', name: 'Peter Griffin', image: require('../../assets/Peter Griffin.jpeg') },
-  { id: 'gojo', name: 'Satoru Gojo', image: require('../../assets/Satoru Gojo.webp') },
-  { id: 'inosuke', name: 'Inosuke Hashibira', image: require('../../assets/Inosuke Hashibira.jpeg') },
-];
+import VideoBackground from '../components/VideoBackground';
 
 export default function JoinScreen({ navigation }) {
-  const { setSessionId, setPlayerId, setSelectedCharacter } = useGame();
+  const { setSessionId, setPlayerId } = useGame();
   const [joinCode, setJoinCode] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [selectedChar, setSelectedChar] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isValid = joinCode.length === 6 && /^\d{6}$/.test(joinCode) && displayName.trim().length >= 2 && selectedChar;
+  useEffect(() => {
+    getUser().then((user) => {
+      if (user && user.name) setDisplayName(user.name);
+    });
+  }, []);
+
+  const isValid = joinCode.length === 6 && /^\d{6}$/.test(joinCode) && displayName.trim().length >= 2;
 
   const handleJoin = async () => {
     if (!isValid || loading) return;
@@ -50,8 +44,7 @@ export default function JoinScreen({ navigation }) {
       await saveSession(sessionId, playerId);
       setSessionId(sessionId);
       setPlayerId(playerId);
-      setSelectedCharacter(selectedChar);
-      navigation.replace('Lobby');
+      navigation.replace('GunPair');
     } catch (e) {
       const message = e.message || 'Failed to join session';
       if (message.includes('not found')) {
@@ -69,62 +62,43 @@ export default function JoinScreen({ navigation }) {
   };
 
   return (
-    <ImageBackground source={backgroundImage} style={styles.container} resizeMode="cover">
+    <View style={styles.container}>
+      <VideoBackground />
       <View style={styles.overlay}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Back button */}
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.replace('MainMenu')}>
+          <Text style={styles.backText}>BACK</Text>
+        </TouchableOpacity>
+
+        {/* Center card */}
+        <View style={styles.card}>
           <Text style={styles.title}>JOIN GAME</Text>
 
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Join Code (6 digits)"
-              placeholderTextColor="#888"
-              value={joinCode}
-              onChangeText={(text) => {
-                setJoinCode(text.replace(/[^0-9]/g, '').slice(0, 6));
-                setError('');
-              }}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
+          <TextInput
+            style={styles.input}
+            placeholder="Your Name"
+            placeholderTextColor="#888"
+            value={displayName}
+            onChangeText={(text) => {
+              setDisplayName(text);
+              setError('');
+            }}
+            maxLength={20}
+            autoCapitalize="words"
+          />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Your Name"
-              placeholderTextColor="#888"
-              value={displayName}
-              onChangeText={(text) => {
-                setDisplayName(text);
-                setError('');
-              }}
-              maxLength={20}
-              autoCapitalize="none"
-            />
-          </View>
-
-          {/* Character Selection */}
-          <Text style={styles.charHeading}>CHOOSE YOUR CHARACTER</Text>
-
-          <View style={styles.charGrid}>
-            {CHARACTERS.map((char) => (
-              <TouchableOpacity
-                key={char.id}
-                style={[
-                  styles.charOption,
-                  selectedChar === char.id && styles.charOptionSelected,
-                ]}
-                onPress={() => setSelectedChar(char.id)}
-                activeOpacity={0.7}
-              >
-                <Image source={char.image} style={styles.charImage} />
-                {selectedChar === char.id && (
-                  <View style={styles.charCheckmark}>
-                    <Text style={styles.charCheckmarkText}>✓</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
+          <TextInput
+            style={[styles.input, styles.codeInput]}
+            placeholder="Enter 6-digit Join Code"
+            placeholderTextColor="#888"
+            value={joinCode}
+            onChangeText={(text) => {
+              setJoinCode(text.replace(/[^0-9]/g, '').slice(0, 6));
+              setError('');
+            }}
+            keyboardType="number-pad"
+            maxLength={6}
+          />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -135,14 +109,14 @@ export default function JoinScreen({ navigation }) {
             activeOpacity={0.7}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#000" />
             ) : (
-              <Text style={styles.buttonText}>JOIN GAME</Text>
+              <Text style={styles.buttonText}>JOIN</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -152,120 +126,83 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-  },
-  scrollContent: {
-    flexGrow: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 60,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 16,
+    left: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  backText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  card: {
+    backgroundColor: 'rgba(10, 10, 30, 0.85)',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    width: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(150, 50, 255, 0.3)',
   },
   title: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
     letterSpacing: 4,
-    marginBottom: 30,
-    textShadowColor: 'rgba(0, 200, 255, 0.5)',
+    marginBottom: 24,
+    textShadowColor: 'rgba(150, 50, 255, 0.6)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
-  form: {
-    width: '100%',
-    maxWidth: 320,
-  },
   input: {
-    backgroundColor: 'rgba(20, 20, 40, 0.8)',
+    backgroundColor: 'rgba(30, 30, 60, 0.8)',
     borderWidth: 1,
-    borderColor: 'rgba(100, 100, 150, 0.5)',
-    borderRadius: 10,
+    borderColor: 'rgba(150, 50, 255, 0.4)',
+    borderRadius: 8,
     padding: 14,
-    fontSize: 16,
+    fontSize: 18,
     color: '#fff',
-    marginBottom: 12,
+    width: '100%',
     textAlign: 'center',
   },
-  charHeading: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    letterSpacing: 2,
-    marginTop: 24,
-    marginBottom: 16,
-    textShadowColor: 'rgba(0, 200, 255, 0.4)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
-  },
-  charGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  charOption: {
-    width: 72,
-    height: 72,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  charOptionSelected: {
-    borderColor: '#00e5ff',
-    borderWidth: 3,
-    shadowColor: '#00e5ff',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  charImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  charCheckmark: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#00e5ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  charCheckmarkText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: 'bold',
+  codeInput: {
+    letterSpacing: 6,
+    marginTop: 12,
   },
   error: {
     color: '#ff4444',
-    fontSize: 13,
+    fontSize: 12,
     textAlign: 'center',
-    marginBottom: 12,
+    marginTop: 10,
   },
   button: {
-    backgroundColor: 'rgba(200, 0, 0, 0.85)',
-    borderRadius: 10,
-    paddingHorizontal: 40,
-    paddingVertical: 16,
+    backgroundColor: '#FFD700',
+    borderRadius: 8,
+    paddingHorizontal: 50,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 100, 100, 0.4)',
+    marginTop: 20,
   },
   buttonDisabled: {
-    backgroundColor: 'rgba(80, 0, 0, 0.6)',
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: '#000',
     fontSize: 18,
     fontWeight: 'bold',
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
 });

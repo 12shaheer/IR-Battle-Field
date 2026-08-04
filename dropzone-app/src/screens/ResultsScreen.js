@@ -16,7 +16,7 @@ export default function ResultsScreen({ navigation }) {
   const handlePlayAgain = async () => {
     await clearSession();
     clearGameState();
-    navigation.replace('Join');
+    navigation.replace('MainMenu');
   };
 
   const renderRow = ({ item, index }) => {

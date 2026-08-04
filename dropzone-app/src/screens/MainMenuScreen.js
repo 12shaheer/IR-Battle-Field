@@ -4,23 +4,16 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ImageBackground,
 } from 'react-native';
 import { useGame } from '../context/GameContext';
 import ModelViewer from '../components/ModelViewer';
-
-const backgroundImage = require('../../assets/Intro.jpeg');
+import VideoBackground from '../components/VideoBackground';
 
 const CHARACTERS = [
   {
-    id: 'knight',
-    name: 'The Roaring Knight',
-    model: require('../../assets/models/knight.glb'),
-  },
-  {
-    id: 'dafodil',
-    name: 'Dafodil',
-    model: require('../../assets/models/dafodil.glb'),
+    id: 'velina',
+    name: 'Velina',
+    model: require('../../assets/models/velina_zzz.glb'),
   },
 ];
 
@@ -40,7 +33,8 @@ export default function MainMenuScreen({ navigation }) {
   };
 
   return (
-    <ImageBackground source={backgroundImage} style={styles.container} resizeMode="cover">
+    <View style={styles.container}>
+      <VideoBackground />
       <View style={styles.overlay}>
         {/* Top Navigation Bar */}
         <View style={styles.topBar}>
@@ -60,60 +54,57 @@ export default function MainMenuScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Main Content */}
-        {activeTab === 'Home' ? (
-          <View style={styles.homeContent}>
-            {/* Center: 3D Character */}
-            <View style={styles.characterDisplay}>
-              <ModelViewer
-                modelAsset={selectedChar.model}
-                style={styles.modelViewer}
-                autoRotate={true}
-              />
-              <Text style={styles.characterName}>{selectedChar.name}</Text>
-            </View>
+        {/* Main Content — both tabs stay mounted to avoid GL context teardown */}
+        <View style={[styles.homeContent, activeTab !== 'Home' && styles.hidden]}>
+          {/* Center: 3D Character */}
+          <View style={styles.characterDisplay}>
+            <ModelViewer
+              modelAsset={selectedChar.model}
+              style={styles.modelViewer}
+              autoRotate={true}
+            />
+            <Text style={styles.characterName}>{selectedChar.name}</Text>
+          </View>
 
-            {/* Right: Play Button */}
-            <View style={styles.rightPanel}>
-              <TouchableOpacity style={styles.playButton} onPress={handlePlay} activeOpacity={0.8}>
-                <Text style={styles.playButtonText}>PLAY!</Text>
+          {/* Right: Play Button */}
+          <View style={styles.rightPanel}>
+            <TouchableOpacity style={styles.playButton} onPress={handlePlay} activeOpacity={0.8}>
+              <Text style={styles.playButtonText}>PLAY!</Text>
+            </TouchableOpacity>
+            <Text style={styles.modeText}>BATTLE ROYALE</Text>
+          </View>
+        </View>
+
+        <View style={[styles.charactersContent, activeTab !== 'Characters' && styles.hidden]}>
+          <Text style={styles.charSectionTitle}>SELECT YOUR CHARACTER</Text>
+          <View style={styles.charGrid}>
+            {CHARACTERS.map((char) => (
+              <TouchableOpacity
+                key={char.id}
+                style={[
+                  styles.charCard,
+                  selectedChar.id === char.id && styles.charCardSelected,
+                ]}
+                onPress={() => handleSelectChar(char)}
+                activeOpacity={0.7}
+              >
+                <ModelViewer
+                  modelAsset={char.model}
+                  style={styles.charCardModel}
+                  autoRotate={true}
+                />
+                <Text style={styles.charCardName}>{char.name}</Text>
+                {selectedChar.id === char.id && (
+                  <View style={styles.selectedBadge}>
+                    <Text style={styles.selectedBadgeText}>EQUIPPED</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-              <Text style={styles.modeText}>BATTLE ROYALE</Text>
-            </View>
+            ))}
           </View>
-        ) : (
-          /* Characters Tab */
-          <View style={styles.charactersContent}>
-            <Text style={styles.charSectionTitle}>SELECT YOUR CHARACTER</Text>
-            <View style={styles.charGrid}>
-              {CHARACTERS.map((char) => (
-                <TouchableOpacity
-                  key={char.id}
-                  style={[
-                    styles.charCard,
-                    selectedChar.id === char.id && styles.charCardSelected,
-                  ]}
-                  onPress={() => handleSelectChar(char)}
-                  activeOpacity={0.7}
-                >
-                  <ModelViewer
-                    modelAsset={char.model}
-                    style={styles.charCardModel}
-                    autoRotate={true}
-                  />
-                  <Text style={styles.charCardName}>{char.name}</Text>
-                  {selectedChar.id === char.id && (
-                    <View style={styles.selectedBadge}>
-                      <Text style={styles.selectedBadgeText}>EQUIPPED</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
+        </View>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -124,6 +115,9 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  hidden: {
+    display: 'none',
   },
   // Top Bar
   topBar: {

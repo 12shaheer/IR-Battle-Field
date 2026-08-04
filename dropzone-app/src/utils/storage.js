@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SESSION_KEY = 'dropzone_session_id';
 const PLAYER_KEY = 'dropzone_player_id';
+const USER_KEY = 'dropzone_user';
 
 export const saveSession = async (sessionId, playerId) => {
   await AsyncStorage.setItem(SESSION_KEY, sessionId);
@@ -17,4 +18,17 @@ export const getSession = async () => {
 export const clearSession = async () => {
   await AsyncStorage.removeItem(SESSION_KEY);
   await AsyncStorage.removeItem(PLAYER_KEY);
+};
+
+export const saveUser = async (user) => {
+  await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
+export const getUser = async () => {
+  const data = await AsyncStorage.getItem(USER_KEY);
+  return data ? JSON.parse(data) : null;
+};
+
+export const clearUser = async () => {
+  await AsyncStorage.removeItem(USER_KEY);
 };

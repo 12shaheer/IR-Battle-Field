@@ -279,9 +279,11 @@ app.post('/joinSession', (req, res) => {
   }
 
   const playerId = generateId();
+  const playerNumber = Object.keys(session.players).length + 1;
   session.players[playerId] = {
     id: playerId,
     displayName,
+    playerNumber,
     health: 100,
     ammo: 30,
     maxAmmo: 30,

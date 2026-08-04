@@ -4,6 +4,7 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import { callFunction } from '../utils/firebase';
 import { fireShot } from '../game/combat';
 import { getTargetInSight } from '../game/targeting';
+import { fireIR } from '../game/ir';
 import { playSound } from '../utils/sounds';
 import { useGame } from '../context/GameContext';
 
@@ -91,9 +92,12 @@ export default function ShootButton() {
 
     playSound('gunshot');
 
-    // Drop this shot in the mailbox with whoever the camera has in its sights
-    // (null = a miss). Later the IR blaster hands its own target to the same
-    // mailbox, and none of the game logic changes.
+    // Fire the IR tagger (if connected) with our username
+    if (playerData?.displayName) {
+      fireIR(playerData.displayName);
+    }
+
+    // Also fire via QR targeting (both inputs coexist)
     fireShot({
       sessionId,
       shooterId: playerId,

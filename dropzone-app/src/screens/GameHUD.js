@@ -6,6 +6,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { useGame } from '../context/GameContext';
 import { decodeTag } from '../game/tags';
 import { tagSpotted } from '../game/targeting';
+import { setupIRHardware, teardownIRHardware } from '../game/irSetup';
 import { playSound, loadSounds } from '../utils/sounds';
 import HealthBar from '../components/HealthBar';
 import AmmoCounter from '../components/AmmoCounter';
@@ -54,6 +55,17 @@ export default function GameHUD({ navigation }) {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     };
   }, []);
+
+  // Connect to IR blaster + receiver over BLE when the game screen mounts
+  const playersReady = players.length > 0;
+  useEffect(() => {
+    console.log('[IR] GameHUD effect check:', { sessionId, playerId, playersReady, playersLength: players.length });
+    if (!sessionId || !playerId || !playersReady) return;
+
+    setupIRHardware({ players, myPlayerId: playerId, sessionId });
+
+    return () => { teardownIRHardware(); };
+  }, [sessionId, playerId, playersReady]);
 
   useEffect(() => {
     if (!cameraPermission?.granted && !cameraPermission?.canAskAgain === false) {
