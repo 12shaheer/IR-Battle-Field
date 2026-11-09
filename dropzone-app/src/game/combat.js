@@ -1,3 +1,5 @@
+import { teamAuth } from './teamParty';
+import { isCombatBlocked, playerCombatBlocked } from './combatState';
 import { callFunction } from '../utils/firebase';
 
 // ─── The "mailbox" ───────────────────────────────────────────────────────────
@@ -9,21 +11,23 @@ import { callFunction } from '../utils/firebase';
 // A hit whose shooter AND target are already known. QR/IR will call this
 // directly, because they know exactly which player was hit.
 export async function registerHit({ sessionId, shooterId, targetId }) {
-  return callFunction('processHit', { sessionId, shooterId, targetId });
+  return callFunction('processHit', { sessionId, shooterId, targetId, ...teamAuth(sessionId) });
 }
 
 // A trigger pull. If the shooter had a valid enemy in their sights (targetId
 // from the camera's QR scan), that exact player takes the hit. Otherwise the
 // shot is a miss: ammo is spent via fireWeapon, but nobody is hurt.
 export async function fireShot({ sessionId, shooterId, players, targetId }) {
+  const shooter = (players || []).find(p => p.id === shooterId);
+  if (isCombatBlocked() || playerCombatBlocked(shooter)) return { data: { success: false, reason: 'Shooting is disabled during first aid' } };
   if (targetId) {
     const target = (players || []).find(
-      (p) => p.id === targetId && p.id !== shooterId && p.status === 'alive'
+      (p) => p.id === targetId && p.id !== shooterId && p.status === 'alive' && (!shooter?.teamId || shooter.teamId !== p.teamId)
     );
     if (target) {
       return registerHit({ sessionId, shooterId, targetId: target.id });
     }
   }
 
-  return callFunction('fireWeapon', { sessionId, playerId: shooterId });
+  return callFunction('fireWeapon', { sessionId, playerId: shooterId, ...teamAuth(sessionId) });
 }

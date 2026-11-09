@@ -1,0 +1,12 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { fingerprint } = require('./unity-source-fingerprint.cjs');
+const root = path.resolve(__dirname, '../unity-export');
+const binary = path.join(root, 'unityLibrary/src/main/jniLibs/arm64-v8a/libil2cpp.so');
+const source = path.join(root, 'unityLibrary/src/main/Il2CppOutputProject/Source/il2cppOutput/Assembly-CSharp.cpp');
+const bytes = fs.readFileSync(binary);
+if (bytes.subarray(0, 4).toString('hex') !== '7f454c46' || bytes[4] !== 2 || bytes[5] !== 1 || bytes.readUInt16LE(18) !== 183) throw new Error('Expected a compiled ARM64 Android ELF library');
+const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+fs.writeFileSync(path.join(root, 'dropzone-prebuilt.json'), JSON.stringify({ abi: 'arm64-v8a', binary: hash(bytes), source: hash(fs.readFileSync(source)), runtimeSource: fingerprint(path.resolve(__dirname,'../../dropzone-unity')) }, null, 2));
+console.log('Verified Android ELF library; source and binary fingerprints saved. No APK generated.');

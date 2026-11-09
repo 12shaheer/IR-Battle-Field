@@ -29,7 +29,7 @@ export default function LobbyScreen({ navigation }) {
     return (
       <View style={[styles.playerRow, isMe && styles.playerRowMe]}>
         <Text style={[styles.playerName, isMe && styles.playerNameMe]}>
-          {item.displayName} {isMe ? '(You)' : ''}
+          {item.displayName} {isMe ? '(You)' : ''}{item.teamName ? ' · ' + item.teamName : ''}
         </Text>
       </View>
     );
@@ -48,7 +48,7 @@ export default function LobbyScreen({ navigation }) {
         </Text>
 
         <Text style={styles.playerCount}>
-          {players.length} / 40 players
+          {players.length} / {sessionData?.maxPlayers || 40} players
         </Text>
 
         <BattleTag playerId={playerId} />

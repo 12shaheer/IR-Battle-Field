@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const { createTeamMode, isTeam, blocked } = require('./team-mode');
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -9,8 +10,17 @@ app.use(express.json());
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ─── In-memory data store (sessions only) ───────────────────────────────────
+// ─── In-memory data store ───────────────────────────────────────────────────
 const sessions = {};
+const registeredUsers = {};
+let userCounter = 0;
+const teamMode = createTeamMode({ sessions, broadcast, addEvent });
+teamMode.mount(app);
+function teamRequest(req, res, session, ids) {
+  if (!isTeam(session)) return true;
+  try { teamMode.authorizeCombat(req.body, ids);return true; }
+  catch (error) { res.status(error.status || 403).json({ error: error.message });return false; }
+}
 
 function generateJoinCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -40,17 +50,17 @@ function checkAndEndGame(sessionId, force = false) {
   const session = sessions[sessionId];
   if (!session || session.status !== 'active') return;
 
-  // With respawns enabled, the game only ends by time or GM force-end.
   if (!force) return;
 
   session.status = 'ended';
   session.endedAt = Date.now();
 
+  const alive = Object.values(session.players).filter(p => p.status === 'alive');
+
   if (alive.length === 1) {
     session.winnerId = alive[0].id;
     session.winnerName = alive[0].displayName;
   } else if (alive.length > 1) {
-    // Forced end with several survivors: best performer among the living wins.
     const best = [...alive].sort(
       (a, b) => (b.kills || 0) - (a.kills || 0) || (b.damageDealt || 0) - (a.damageDealt || 0)
     )[0];
@@ -59,14 +69,11 @@ function checkAndEndGame(sessionId, force = false) {
   }
 
   const leaderboard = Object.values(session.players)
-    .sort((a, b) => {
-      if (a.status === 'alive' && b.status !== 'alive') return -1;
-      if (b.status === 'alive' && a.status !== 'alive') return 1;
-      return (b.kills || 0) - (a.kills || 0) || (b.damageDealt || 0) - (a.damageDealt || 0);
-    })
+    .sort((a, b) => (b.kills || 0) - (a.kills || 0) || (b.damageDealt || 0) - (a.damageDealt || 0))
     .map((p, i) => ({ rank: i + 1, ...p }));
 
   session.leaderboard = leaderboard;
+  if (isTeam(session)) teamMode.endTeamGame(session);
 
   addEvent(sessionId, {
     type: 'game_ended',
@@ -100,6 +107,7 @@ function scheduleRespawn(sessionId, playerId) {
     player.status = 'alive';
     player.eliminatedBy = null;
     player.respawnAt = null;
+    player.respawns = (player.respawns || 0) + 1;
 
     addEvent(sessionId, { type: 'player_revived', targetId: playerId, targetName: player.displayName });
     broadcast('session_update', { sessionId, session });
@@ -108,11 +116,12 @@ function scheduleRespawn(sessionId, playerId) {
 
 // ─── Game timer + Zone shrink timer ─────────────────────────────────────────
 setInterval(() => {
+  teamMode.tick();
   Object.entries(sessions).forEach(([sessionId, session]) => {
     if (session.status !== 'active') return;
 
     // End game when total time expires
-    const totalGameSeconds = session.shrinkInterval * 4;
+    const totalGameSeconds = isTeam(session) ? session.durationSeconds : session.shrinkInterval * 4;
     const elapsed = (Date.now() - session.startedAt) / 1000;
     if (elapsed >= totalGameSeconds) {
       session.status = 'ended';
@@ -133,12 +142,13 @@ setInterval(() => {
         })
         .map((p, i) => ({ rank: i + 1, ...p }));
 
+      if (isTeam(session)) teamMode.endTeamGame(session);
       addEvent(sessionId, { type: 'game_ended', winnerId: session.winnerId, winnerName: session.winnerName, reason: 'time_expired' });
       broadcast('session_update', { sessionId, session });
       return;
     }
 
-    if (!session.nextShrinkAt || Date.now() < session.nextShrinkAt) return;
+    if (isTeam(session) || !session.nextShrinkAt || Date.now() < session.nextShrinkAt) return;
 
     const prevRadius = session.zoneRadius;
     session.zoneRadius = Math.max(session.zoneRadius * (1 - session.shrinkAmount), 5);
@@ -167,6 +177,7 @@ setInterval(() => {
         player.status = 'eliminated';
         player.eliminatedBy = 'zone';
         player.respawnAt = Date.now() + RESPAWN_DELAY_MS;
+        player.deaths = (player.deaths || 0) + 1;
         addEvent(sessionId, { type: 'zone_kill', targetId: player.id, targetName: player.displayName });
         scheduleRespawn(sessionId, player.id);
       } else {
@@ -179,6 +190,11 @@ setInterval(() => {
 }, 1000);
 
 // ─── REST API ────────────────────────────────────────────────────────────────
+
+// Railway checks this endpoint before routing traffic to a new deployment.
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', features: ['team-parties', 'team-first-aid-v1'] });
+});
 
 // List all sessions
 app.get('/sessions', (req, res) => {
@@ -228,10 +244,16 @@ app.post('/createSession', (req, res) => {
     zoneDamage = 10,
   } = req.body;
 
+  const mode = req.body.mode || 'solo';
+  const durationSeconds = Number(req.body.durationSeconds || 1200);
+  if (!['solo', 'team'].includes(mode)) return res.status(400).json({ error: 'Choose Solo or Team Deathmatch.' });
+  if (!Number.isInteger(maxPlayers) || maxPlayers < 1 || maxPlayers > 40) return res.status(400).json({ error: 'A game supports 1–40 players.' });
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 60 || durationSeconds > 86400) return res.status(400).json({ error: 'Match duration must be 60–86400 seconds.' });
   const id = generateId();
   const joinCode = generateJoinCode();
 
   sessions[id] = {
+    mode, durationSeconds, teams: {},
     venueName,
     status: 'lobby',
     joinCode,
@@ -273,6 +295,7 @@ app.post('/joinSession', (req, res) => {
   }
 
   const [sessionId, session] = entry;
+  if (isTeam(session)) return res.status(400).json({ error: 'Join this Team Deathmatch through your party leader.' });
 
   if (Object.keys(session.players).length >= session.maxPlayers) {
     return res.status(400).json({ error: 'Session is full' });
@@ -288,6 +311,8 @@ app.post('/joinSession', (req, res) => {
     ammo: 30,
     maxAmmo: 30,
     kills: 0,
+    deaths: 0,
+    respawns: 0,
     damageDealt: 0,
     status: 'alive',
     position: { x: session.zoneCenter.x, y: session.zoneCenter.y },
@@ -310,9 +335,10 @@ app.post('/startGame', (req, res) => {
   const playerCount = Object.keys(session.players).length;
   if (playerCount < 1) return res.status(400).json({ error: 'Need at least 1 player' });
 
+  if (isTeam(session)) { try { teamMode.validateStart(session); } catch (error) { return res.status(400).json({ error: error.message }); } }
   session.status = 'active';
   session.startedAt = Date.now();
-  session.nextShrinkAt = Date.now() + session.shrinkInterval * 1000;
+  session.nextShrinkAt = isTeam(session) ? null : Date.now() + session.shrinkInterval * 1000;
 
   addEvent(sessionId, { type: 'game_started', playerCount });
   broadcast('session_update', { sessionId, session });
@@ -322,6 +348,7 @@ app.post('/startGame', (req, res) => {
 // Process hit
 app.post('/processHit', (req, res) => {
   const { sessionId, shooterId, targetId } = req.body;
+  teamMode.tick();
   const session = sessions[sessionId];
 
   if (!session || session.status !== 'active') {
@@ -330,6 +357,10 @@ app.post('/processHit', (req, res) => {
 
   const shooter = session.players[shooterId];
   const target = session.players[targetId];
+  if (!teamRequest(req, res, session, [shooterId, targetId])) return;
+  if (shooterId === targetId) return res.json({ success: false, reason: 'Self hits are disabled' });
+  if (blocked(shooter)) return res.json({ success: false, reason: 'Shooting is disabled during first aid' });
+  if (isTeam(session) && shooter?.teamId && shooter.teamId === target?.teamId) return res.json({ success: false, reason: 'Friendly fire is disabled' });
 
   if (!shooter || shooter.status !== 'alive') return res.status(400).json({ error: 'Shooter not alive' });
   if (!target || target.status !== 'alive') return res.json({ success: false, reason: 'Target already eliminated' });
@@ -347,6 +378,8 @@ app.post('/processHit', (req, res) => {
     target.eliminatedBy = shooterId;
     target.respawnAt = Date.now() + RESPAWN_DELAY_MS;
     shooter.kills++;
+    if (isTeam(session) && session.teams[shooter.teamId]) session.teams[shooter.teamId].score++;
+    target.deaths = (target.deaths || 0) + 1;
     scheduleRespawn(sessionId, targetId);
   }
 
@@ -359,18 +392,22 @@ app.post('/processHit', (req, res) => {
     damage,
   });
 
+  teamMode.tick();
   broadcast('session_update', { sessionId, session });
   res.json({ success: true, eliminated, targetHealth: target.health, shooterAmmo: shooter.ammo });
 });
 
 // Fire weapon (miss / no target — just decrements ammo)
 app.post('/fireWeapon', (req, res) => {
+  teamMode.tick();
   const { sessionId, playerId } = req.body;
   const session = sessions[sessionId];
   if (!session || session.status !== 'active') {
     return res.status(400).json({ error: 'Game is not active' });
   }
   const player = session.players[playerId];
+  if (!teamRequest(req, res, session, [playerId])) return;
+  if (blocked(player)) return res.json({ success: false, reason: 'Shooting is disabled during first aid' });
   if (!player || player.status !== 'alive') return res.status(400).json({ error: 'Player not alive' });
   if (player.ammo <= 0) return res.json({ success: false, reason: 'No ammo' });
 
@@ -386,6 +423,8 @@ app.post('/reloadAmmo', (req, res) => {
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const player = session.players[playerId];
+  if (!teamRequest(req, res, session, [playerId])) return;
+  if (blocked(player)) return res.json({ success: false, reason: 'Shooting is disabled during first aid' });
   if (!player || player.status !== 'alive') return res.status(400).json({ error: 'Player not alive' });
 
   player.ammo = player.maxAmmo;
@@ -437,9 +476,37 @@ app.post('/revivePlayer', (req, res) => {
   res.json({ success: true });
 });
 
+// Check username uniqueness and register user
+app.post('/checkUsername', (req, res) => {
+  const { username, deviceId } = req.body;
+
+  const usernameLower = (username || '').trim().toLowerCase();
+
+  for (const [key, user] of Object.entries(registeredUsers)) {
+    if (key === deviceId) continue;
+    if (user.username.toLowerCase() === usernameLower) {
+      return res.json({ taken: true, message: 'Username is already taken.' });
+    }
+  }
+
+  if (deviceId) {
+    const existing = registeredUsers[deviceId];
+    if (existing) {
+      existing.username = username.trim();
+    } else {
+      userCounter++;
+      const userId = `USER${String(userCounter).padStart(4, '0')}`;
+      registeredUsers[deviceId] = { username: username.trim(), userId };
+    }
+    return res.json({ taken: false, userId: registeredUsers[deviceId].userId });
+  }
+
+  res.json({ taken: false });
+});
+
 // ─── Start server ────────────────────────────────────────────────────────────
-const PORT = 3001;
-server.listen(PORT, '0.0.0.0', () => {
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   console.log(`DropZone server running on http://localhost:${PORT}`);
   console.log(`WebSocket available on ws://localhost:${PORT}`);
 });

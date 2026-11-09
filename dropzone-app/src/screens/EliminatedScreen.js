@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useGame } from '../context/GameContext';
+import { teardownIRHardware } from '../game/irSetup';
 import MiniMap from '../components/MiniMap';
 
 export default function EliminatedScreen({ navigation }) {
@@ -10,6 +11,7 @@ export default function EliminatedScreen({ navigation }) {
 
   useEffect(() => {
     if (sessionData?.status === 'ended') {
+      teardownIRHardware();
       navigation.replace('Results');
     }
   }, [sessionData?.status]);

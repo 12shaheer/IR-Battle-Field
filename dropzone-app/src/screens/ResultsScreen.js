@@ -7,11 +7,10 @@ export default function ResultsScreen({ navigation }) {
   const { sessionData, players, playerId, clearGameState } = useGame();
 
   const leaderboard = sessionData?.leaderboard ||
-    [...players].sort((a, b) => {
-      if (a.status === 'alive' && b.status !== 'alive') return -1;
-      if (b.status === 'alive' && a.status !== 'alive') return 1;
-      return b.kills - a.kills || b.damageDealt - a.damageDealt;
-    });
+    [...players].sort((a, b) => (b.kills || 0) - (a.kills || 0) || (b.damageDealt || 0) - (a.damageDealt || 0));
+
+  const myStats = leaderboard.find(p => p.id === playerId);
+  const myRank = leaderboard.findIndex(p => p.id === playerId) + 1;
 
   const handlePlayAgain = async () => {
     await clearSession();
@@ -21,28 +20,28 @@ export default function ResultsScreen({ navigation }) {
 
   const renderRow = ({ item, index }) => {
     const isMe = item.id === playerId;
-    const isWinner = item.id === sessionData?.winnerId || index === 0;
+    const isWinner = index === 0;
 
     return (
-      <View style={[
-        styles.row,
-        isMe && styles.rowMe,
-        isWinner && styles.rowWinner,
-      ]}>
-        <Text style={styles.rank}>#{index + 1}</Text>
+      <View style={[styles.row, isMe && styles.rowMe, isWinner && styles.rowWinner]}>
+        <Text style={[styles.rank, isWinner && styles.rankWinner]}>#{index + 1}</Text>
         <View style={styles.nameCol}>
           <Text style={[styles.name, isWinner && styles.nameWinner]}>
             {item.displayName} {isMe ? '(You)' : ''}
           </Text>
         </View>
-        <Text style={styles.kills}>{item.kills ?? 0} kills</Text>
-        <Text style={styles.damage}>{item.damageDealt ?? 0} dmg</Text>
-        <Text style={[
-          styles.status,
-          item.status === 'alive' ? styles.alive : styles.dead,
-        ]}>
-          {item.status === 'alive' ? '🏆' : '💀'}
-        </Text>
+        <View style={styles.statCol}>
+          <Text style={styles.statValue}>{item.kills ?? 0}</Text>
+          <Text style={styles.statLabel}>kills</Text>
+        </View>
+        <View style={styles.statCol}>
+          <Text style={styles.statValue}>{item.deaths ?? 0}</Text>
+          <Text style={styles.statLabel}>deaths</Text>
+        </View>
+        <View style={styles.statCol}>
+          <Text style={styles.statValue}>{item.respawns ?? 0}</Text>
+          <Text style={styles.statLabel}>respawns</Text>
+        </View>
       </View>
     );
   };
@@ -52,7 +51,35 @@ export default function ResultsScreen({ navigation }) {
       <Text style={styles.header}>GAME OVER</Text>
 
       {sessionData?.winnerName && (
-        <Text style={styles.winner}>👑 {sessionData.winnerName} wins!</Text>
+        <Text style={styles.winner}>{sessionData.winnerName === 'Draw' ? 'Match drawn' : sessionData.winnerName + ' wins!'}</Text>
+      )}
+
+      {myStats && (
+        <View style={styles.myStatsBox}>
+          <Text style={styles.myStatsTitle}>YOUR RESULTS</Text>
+          <View style={styles.myStatsRow}>
+            <View style={styles.myStatItem}>
+              <Text style={styles.myStatValue}>#{myRank}</Text>
+              <Text style={styles.myStatLabel}>Place</Text>
+            </View>
+            <View style={styles.myStatItem}>
+              <Text style={styles.myStatValue}>{myStats.kills ?? 0}</Text>
+              <Text style={styles.myStatLabel}>Kills</Text>
+            </View>
+            <View style={styles.myStatItem}>
+              <Text style={styles.myStatValue}>{myStats.deaths ?? 0}</Text>
+              <Text style={styles.myStatLabel}>Deaths</Text>
+            </View>
+            <View style={styles.myStatItem}>
+              <Text style={styles.myStatValue}>{myStats.respawns ?? 0}</Text>
+              <Text style={styles.myStatLabel}>Respawns</Text>
+            </View>
+            <View style={styles.myStatItem}>
+              <Text style={styles.myStatValue}>{myStats.damageDealt ?? 0}</Text>
+              <Text style={styles.myStatLabel}>Damage</Text>
+            </View>
+          </View>
+        </View>
       )}
 
       <FlatList
@@ -73,33 +100,68 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0a0a1a',
-    paddingTop: 60,
+    paddingTop: 30,
+    paddingHorizontal: 16,
   },
   header: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
     letterSpacing: 4,
   },
   winner: {
     color: '#ffd700',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: 12,
+    marginTop: 6,
+  },
+  myStatsBox: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  myStatsTitle: {
+    color: '#00e5ff',
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  myStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  myStatItem: {
+    alignItems: 'center',
+  },
+  myStatValue: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  myStatLabel: {
+    color: '#888',
+    fontSize: 10,
+    marginTop: 2,
   },
   list: {
-    paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingTop: 6,
+    paddingBottom: 10,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1a1a2e',
-    padding: 10,
+    padding: 8,
     borderRadius: 8,
-    marginBottom: 6,
+    marginBottom: 5,
   },
   rowMe: {
     borderWidth: 1,
@@ -115,49 +177,47 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     fontWeight: 'bold',
-    width: 32,
+    width: 30,
+  },
+  rankWinner: {
+    color: '#ffd700',
   },
   nameCol: {
     flex: 1,
   },
   name: {
     color: '#ccc',
-    fontSize: 14,
+    fontSize: 13,
   },
   nameWinner: {
     color: '#ffd700',
     fontWeight: 'bold',
   },
-  kills: {
-    color: '#ff6666',
-    fontSize: 12,
-    marginRight: 10,
+  statCol: {
+    alignItems: 'center',
+    marginHorizontal: 8,
+    minWidth: 40,
   },
-  damage: {
-    color: '#aaa',
-    fontSize: 12,
-    marginRight: 8,
-  },
-  status: {
+  statValue: {
+    color: '#fff',
     fontSize: 14,
+    fontWeight: 'bold',
   },
-  alive: {
-    color: '#00ff00',
-  },
-  dead: {
+  statLabel: {
     color: '#666',
+    fontSize: 9,
   },
   button: {
     backgroundColor: '#cc0000',
-    margin: 20,
-    padding: 16,
+    padding: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 20,
+    marginTop: 6,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     letterSpacing: 2,
   },

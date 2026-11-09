@@ -2,7 +2,10 @@ import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
 const players = {
   gunshot: null,
+  weaponFire: null,
   hit: null,
+  hitmarker: null,
+  killConfirmed: null,
   lowhealth: null,
   zoneWarning: null,
 };
@@ -16,7 +19,10 @@ export const loadSounds = async () => {
     await setAudioModeAsync({ playsInSilentMode: true });
 
     players.gunshot = createAudioPlayer(require('../assets/sounds/gunshot.mp3'));
+    players.weaponFire = createAudioPlayer(require('../assets/sounds/weapon_fire.mp3'));
     players.hit = createAudioPlayer(require('../assets/sounds/hit.mp3'));
+    players.hitmarker = createAudioPlayer(require('../assets/sounds/hitmarker.mp3'));
+    players.killConfirmed = createAudioPlayer(require('../assets/sounds/kill_confirmed.mp3'));
     players.lowhealth = createAudioPlayer(require('../assets/sounds/lowhealth.mp3'));
     players.zoneWarning = createAudioPlayer(require('../assets/sounds/zone_warning.mp3'));
 

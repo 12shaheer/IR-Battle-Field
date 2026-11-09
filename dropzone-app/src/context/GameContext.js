@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { connectWebSocket, fetchSession } from '../utils/firebase';
+import { teamAuth, restoreParty } from '../game/teamParty';
+import { callFunction } from '../utils/firebase';
+import { teardownIRHardware } from '../game/irSetup';
 
 const GameContext = createContext(null);
 
@@ -17,7 +20,6 @@ export const GameProvider = ({ children }) => {
   const [players, setPlayers] = useState([]);
   const [recentEvents, setRecentEvents] = useState([]);
   const [isConnected, setIsConnected] = useState(true);
-  const [selectedCharacter, setSelectedCharacter] = useState(null);
 
   const wsRef = useRef(null);
 
@@ -36,7 +38,7 @@ export const GameProvider = ({ children }) => {
         if (me) setPlayerData(me);
       }
       if (session.events) setRecentEvents(session.events.slice(0, 10));
-    });
+    }).catch(() => setIsConnected(false));
 
     const ws = connectWebSocket((msg) => {
       if (msg.sessionId !== sessionId) return;
@@ -67,13 +69,29 @@ export const GameProvider = ({ children }) => {
       }
 
       setIsConnected(true);
-    });
+    }, setIsConnected);
 
     wsRef.current = ws;
     return () => ws.close();
   }, [sessionId, playerId]);
 
+  useEffect(() => {
+    if (!sessionId || !playerId || sessionData?.mode !== 'team') return;
+    let stopped = false, busy = false;
+    const pulse = async () => {
+      if (busy || stopped) return;busy = true;
+      try {
+        await restoreParty();
+        await callFunction('teamHeartbeat', { sessionId, playerId, ...teamAuth(sessionId) });
+      } catch (_) { /* The server cancels medical actions when heartbeats expire. */ }
+      finally { busy = false; }
+    };
+    pulse();const timer = setInterval(pulse, 1000);
+    return () => { stopped = true;clearInterval(timer); };
+  }, [sessionId, playerId, sessionData?.mode]);
+
   const clearGameState = useCallback(() => {
+    teardownIRHardware();
     if (wsRef.current) wsRef.current.close();
     setSessionId(null);
     setPlayerId(null);
@@ -94,8 +112,6 @@ export const GameProvider = ({ children }) => {
     recentEvents,
     isConnected,
     clearGameState,
-    selectedCharacter,
-    setSelectedCharacter,
   };
 
   return (

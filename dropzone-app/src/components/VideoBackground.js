@@ -1,18 +1,22 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { Image, StyleSheet } from 'react-native';
 
-const videoSource = require('../../assets/intro-bg.mp4');
+const bgImage = require('../../assets/Main Menu background image.jpeg');
 
 export default function VideoBackground() {
   return (
-    <Video
-      source={videoSource}
-      style={StyleSheet.absoluteFill}
-      resizeMode={ResizeMode.COVER}
-      shouldPlay
-      isLooping
-      isMuted
+    <Image
+      source={bgImage}
+      style={styles.bg}
+      resizeMode="cover"
     />
   );
 }
+
+const styles = StyleSheet.create({
+  bg: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+});

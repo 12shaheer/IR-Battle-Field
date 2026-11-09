@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert 
 import { callFunction } from '../utils/api';
 
 export default function CreateSessionScreen({ navigation }) {
+  const [mode, setMode] = useState('solo');
+  const [duration, setDuration] = useState('20');
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     venueName: '',
@@ -20,9 +22,12 @@ export default function CreateSessionScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    if (!Number.isInteger(Number(form.maxPlayers)) || Number(form.maxPlayers) < 1 || Number(form.maxPlayers) > 40) return Alert.alert('Player limit', 'Choose a capacity from 1 to 40.');
+    if (mode === 'team' && (!Number.isFinite(Number(duration)) || Number(duration) < 1)) return Alert.alert('Match duration', 'Enter at least one minute.');
     setLoading(true);
     try {
       const result = await callFunction('createSession', {
+        mode, durationSeconds: Number(duration) * 60,
         venueName: form.venueName || 'DropZone Arena',
         maxPlayers: Number(form.maxPlayers),
         zoneCenterX: Number(form.zoneCenterX),
@@ -44,6 +49,11 @@ export default function CreateSessionScreen({ navigation }) {
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.heading}>Create New Session</Text>
 
+      <Text style={styles.label}>Game Mode</Text>
+      <View style={styles.row}>
+        {['solo', 'team'].map(value => <TouchableOpacity key={value} onPress={() => setMode(value)} style={[styles.btn, mode === value ? styles.btnPrimary : styles.btnSecondary]}><Text style={styles.btnText}>{value === 'team' ? 'Team Deathmatch' : 'Solo Battle Royale'}</Text></TouchableOpacity>)}
+      </View>
+      {mode === 'team' && <><Text style={styles.label}>Match Duration (minutes)</Text><TextInput style={styles.input} keyboardType="numeric" value={duration} onChangeText={setDuration} /><Text style={styles.label}>Teams of 2–10. Up to 40 players. Highest team kill total wins; ties draw. At least two teams are required to start.</Text></>}
       <Text style={styles.label}>Venue Name</Text>
       <TextInput
         style={styles.input}
@@ -61,6 +71,7 @@ export default function CreateSessionScreen({ navigation }) {
         onChangeText={update('maxPlayers')}
       />
 
+      {mode === 'solo' && <>
       <View style={styles.row}>
         <View style={styles.halfCol}>
           <Text style={styles.label}>Zone Center X</Text>
@@ -114,6 +125,7 @@ export default function CreateSessionScreen({ navigation }) {
         onChangeText={update('zoneDamage')}
       />
 
+      </>}
       <View style={styles.buttons}>
         <TouchableOpacity
           style={[styles.btn, styles.btnPrimary, loading && styles.btnDisabled]}

@@ -50,7 +50,7 @@ export default function ResultsScreen({ route, navigation }) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.gameOver}>GAME OVER</Text>
       {session.winnerName && (
-        <Text style={styles.winner}>{session.winnerName} wins!</Text>
+        <Text style={styles.winner}>{session.winnerName === 'Draw' ? 'DRAW' : session.winnerName + ' wins!'}</Text>
       )}
 
       {/* Stats */}
@@ -73,6 +73,7 @@ export default function ResultsScreen({ route, navigation }) {
         </View>
       </View>
 
+      {session.mode === 'team' && session.teamLeaderboard?.map(team => <View key={team.id} style={styles.statCard}><Text style={styles.statLabel}>{team.name}</Text><Text style={styles.statNumber}>{team.score} kills</Text></View>)}
       {/* Leaderboard */}
       <View style={styles.leaderboard}>
         <View style={styles.tableHeader}>

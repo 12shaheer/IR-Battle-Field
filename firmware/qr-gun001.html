@@ -2,22 +2,54 @@
 <html>
 <head>
   <title>GUN001 QR Code</title>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
   <style>
-    body { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: monospace; background: #111; color: #fff; }
-    canvas { margin: 20px; }
-    pre { background: #222; padding: 12px 20px; border-radius: 8px; }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: monospace;
+      background: #111;
+      color: #fff;
+    }
+
+    #qr {
+      background: white;
+      padding: 20px;
+      margin: 20px;
+    }
+
+    pre {
+      background: #222;
+      padding: 12px 20px;
+      border-radius: 8px;
+    }
   </style>
 </head>
+
 <body>
+
   <h2>GUN001</h2>
-  <canvas id="qr"></canvas>
-  <pre>{"gunId":"GUN001","transmitter":"TX001","receiver":"RX001"}</pre>
+
+  <div id="qr"></div>
+
+  <pre>{"gunId":"gun001","transmitter":"TX001","receiver":"RX001"}</pre>
+
   <script>
-    QRCode.toCanvas(document.getElementById('qr'),
-      JSON.stringify({"gunId":"GUN001","transmitter":"TX001","receiver":"RX001"}),
-      { width: 300, margin: 2 }
-    );
+    new QRCode(document.getElementById("qr"), {
+      text: JSON.stringify({
+        gunId: "gun001",
+        transmitter: "TX001",
+        receiver: "RX001"
+      }),
+      width: 300,
+      height: 300
+    });
   </script>
+
 </body>
 </html>

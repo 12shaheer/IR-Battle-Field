@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DropZone",
-    "slug": "dropzone-app",
+    "slug": "dropzone",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/icon.png",
@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "package": "com.dropzone.battleroyale",
+      "package": "com.dropzone.app",
       "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#0a0a1a",
@@ -54,9 +54,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "0e71d3fb-2548-4b8a-bfb9-67d7d584cc51"
+        "projectId": "82bd116b-db25-4f6c-97e2-a26db0cc3e3d"
       }
     },
-    "owner": "shaheerqureshi123123"
+    "owner": "sheryyyy9880980980s-team"
   }
 }

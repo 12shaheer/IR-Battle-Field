@@ -1,20 +1,64 @@
 import { Buffer } from 'buffer';
 import { Platform, PermissionsAndroid } from 'react-native';
-import { registerHit } from './combat';
+import { isCombatBlocked, playerCombatBlocked } from './combatState';
+import { registerHit, fireShot } from './combat';
+import { getTargetInSight } from './targeting';
 import { bleManager } from './ble';
-import { connectTagger, disconnectTagger, scanAndVerifyDevice } from './ir';
-import { getPairedGun, clearPairedGun } from './gunPairing';
+import { TX_SERVICE_UUID, connectTagger, scanAndVerifyDevice, clearActiveTxDevice, cancelHardwareConnections } from './ir';
+import { getPairedGun } from './gunPairing';
+import { playSound } from '../utils/sounds';
 
-const SERVICE_UUID = '08dbb28a-ce2c-467a-9f12-4f15d574a220';
+export const RX_SERVICE_UUID = '7a3d1e09-b24f-4c8e-a649-83c2d5f17b30';
+const TRIGGER_CHAR_UUID = 'd4e8f591-6b7a-4c3d-9e2f-1a8b3c5d7e9f';
 const HIT_CHAR_UUID = 'a95980fb-4f18-4b2e-a258-81bf77575117';
 
-let rxDevice = null;
-let hitSubscription = null;
+let onTriggerFiredCallback = null;
+let irActive = false;
+let txConnected = false;
+let rxConnected = false;
+let bleStatus = 'disconnected';
+let bleDisconnectedDevice = null;
+const statusCallbacks = new Set();
+let savedContext = null;
+let lifecycle = null;
+let setupInProgress = null;
+
+function updateCombinedStatus() {
+  if (txConnected && rxConnected) {
+    bleStatus = 'connected';
+    bleDisconnectedDevice = null;
+    irActive = true;
+  } else {
+    irActive = false;
+    if (!txConnected && !rxConnected) {
+      bleStatus = 'disconnected';
+      bleDisconnectedDevice = null;
+    } else {
+      bleStatus = 'connecting';
+      bleDisconnectedDevice = !txConnected ? 'TX' : 'RX';
+    }
+  }
+  for (const callback of statusCallbacks) callback(bleStatus, bleDisconnectedDevice);
+}
+
+export function getBleStatus() {
+  return { status: bleStatus, device: bleDisconnectedDevice };
+}
+
+export function onBleStatusChange(callback) {
+  statusCallbacks.add(callback);
+  callback(bleStatus, bleDisconnectedDevice);
+  return () => statusCallbacks.delete(callback);
+}
+
+export function isIRActive() {
+  return irActive;
+}
 
 function hashUsername(name) {
   let h = 2166136261 >>> 0;
-  for (let i = 0; i < name.length; i++) {
-    h = h ^ name.charCodeAt(i);
+  for (const byte of Buffer.from(name, 'utf-8')) {
+    h = h ^ byte;
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h & 0xFFFFFF;
@@ -45,152 +89,235 @@ function buildUsernameHashMap(players) {
 
 async function requestBlePermissions() {
   if (Platform.OS !== 'android') return true;
-
-  if (Platform.Version < 31) return true;
+  if (Platform.Version < 31) {
+    return await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
+      === PermissionsAndroid.RESULTS.GRANTED;
+  }
 
   const result = await PermissionsAndroid.requestMultiple([
     PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
     PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+    // The current manifest does not assert neverForLocation for BLE scans.
+    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
   ]);
   return Object.values(result).every(
     (v) => v === PermissionsAndroid.RESULTS.GRANTED
   );
 }
 
-let setupAborted = false;
-
-export async function setupIRHardware({ players, myPlayerId, sessionId }) {
-  setupAborted = false;
-
-  const gun = getPairedGun();
-  if (!gun) {
-    console.log('[IR] No gun paired — IR hardware skipped');
-    return;
-  }
-
-  const hasPermission = await requestBlePermissions();
-  if (!hasPermission) {
-    console.warn('[IR] BLE permissions denied — IR disabled');
-    return;
-  }
-
-  const myPlayer = players.find(p => p.id === myPlayerId);
-  if (!myPlayer?.displayName) {
-    console.warn('[IR] No displayName found for local player — cannot init tagger');
-    return;
-  }
-
-  const hashMap = buildUsernameHashMap(players);
-  const MAX_RETRIES = 3;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    if (setupAborted) return;
-
-    console.log(`[IR] Connecting TX + RX (attempt ${attempt}/${MAX_RETRIES})`);
-
-    try {
-      // Connect to the transmitter (handles its own scan+verify)
-      const txDevice = await connectTagger(myPlayer.displayName);
-      if (setupAborted) return;
-
-      if (!txDevice) {
-        console.warn(`[IR] Could not connect to TX (attempt ${attempt}/${MAX_RETRIES})`);
-        if (attempt < MAX_RETRIES) {
-          await _delay(1000);
-          continue;
-        }
-        console.warn('[IR] All TX connection attempts failed — IR disabled this round');
+function setupTxSubscription(txDevice, { sessionId, myPlayerId, players }) {
+  const run = lifecycle;
+  return txDevice.monitorCharacteristicForService(
+    TX_SERVICE_UUID,
+    TRIGGER_CHAR_UUID,
+    (err, characteristic) => {
+      if (!isCurrent(run)) return;
+      if (err) {
+        console.error('[IR-TX] Trigger notification error:', err.message);
+        notificationFailed(run, 'tx', txDevice, err);
         return;
       }
+      if (!characteristic?.value) return;
 
-      // Connect to the receiver
-      console.log(`[IR-RX] Scanning for receiver ${gun.receiver}...`);
-      rxDevice = await scanAndVerifyDevice(gun.receiver);
-      if (setupAborted) return;
+      const me = savedContext?.players.find(p => p.id === myPlayerId);
+      if (isCombatBlocked() || playerCombatBlocked(me)) return;
+      console.log('[IR-TX] Physical trigger fired');
+      if (!onTriggerFiredCallback) playSound('gunshot');
 
-      if (!rxDevice) {
-        console.warn(`[IR] Could not connect to RX (attempt ${attempt}/${MAX_RETRIES})`);
-        if (attempt < MAX_RETRIES) {
-          await _delay(1000);
-          continue;
-        }
-        console.warn('[IR] All RX connection attempts failed — IR hit detection disabled');
-        return;
-      }
+      fireShot({
+        sessionId,
+        shooterId: myPlayerId,
+        players: savedContext?.players || players,
+        targetId: getTargetInSight(),
+      }).catch(error => console.warn('[IR] Shot rejected:', error.message));
 
-      // Subscribe to hit notifications on the receiver
-      hitSubscription = rxDevice.monitorCharacteristicForService(
-        SERVICE_UUID,
-        HIT_CHAR_UUID,
-        (err, characteristic) => {
-          if (err) {
-            console.error('[IR-RX] Hit notification error:', err);
-            return;
-          }
-          if (!characteristic?.value) return;
-
-          const rawData = Buffer.from(characteristic.value, 'base64');
-          if (rawData.length < 4) {
-            console.warn('[IR-RX] Hit notification too short:', rawData.length, 'bytes');
-            return;
-          }
-
-          const shooterHash = (rawData[0] << 16) | (rawData[1] << 8) | rawData[2];
-          const damage = rawData[3];
-
-          const hashHex = '0x' + shooterHash.toString(16).padStart(6, '0');
-          const matched = hashMap[shooterHash];
-
-          if (!matched || matched.length === 0) {
-            console.warn(`[IR-RX] HIT from unknown shooter (hash ${hashHex}) — no roster match`);
-            return;
-          }
-
-          if (matched.length > 1) {
-            console.warn(
-              `[IR-RX] HIT hash ${hashHex} collides with ${matched.length} players — using first match`
-            );
-          }
-
-          const shooter = matched[0];
-          if (shooter.id === myPlayerId) return;
-
-          console.log(
-            `[IR-RX] HIT by "${shooter.displayName}" (hash ${hashHex}) for ${damage} damage`
-          );
-
-          registerHit({ sessionId, shooterId: shooter.id, targetId: myPlayerId });
-        }
-      );
-
-      console.log('[IR] TX + RX connected — hit listener active');
-      return;
-    } catch (err) {
-      console.error(`[IR] Setup error (attempt ${attempt}/${MAX_RETRIES}):`, err);
-      if (attempt < MAX_RETRIES) {
-        await _delay(1000);
-      }
+      if (onTriggerFiredCallback) onTriggerFiredCallback();
     }
-  }
-
-  console.warn('[IR] All setup attempts failed — IR disabled this round');
+  );
 }
 
-function _delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function setupRxSubscription(rxDev, serviceUuid, { sessionId, myPlayerId, hashMap }) {
+  const run = lifecycle;
+  return rxDev.monitorCharacteristicForService(
+    serviceUuid,
+    HIT_CHAR_UUID,
+    (err, characteristic) => {
+      if (!isCurrent(run)) return;
+      if (err) {
+        console.error('[IR-RX] Hit notification error:', err.message);
+        notificationFailed(run, 'rx', rxDev, err);
+        return;
+      }
+      if (!characteristic?.value) return;
+
+      const rawData = Buffer.from(characteristic.value, 'base64');
+      if (rawData.length < 4) {
+        console.warn('[IR-RX] Hit notification too short:', rawData.length, 'bytes');
+        return;
+      }
+
+      const shooterHash = (rawData[0] << 16) | (rawData[1] << 8) | rawData[2];
+      const damage = rawData[3];
+
+      const hashHex = '0x' + shooterHash.toString(16).padStart(6, '0');
+      const matched = (savedContext?.hashMap || hashMap)[shooterHash];
+
+      if (!matched || matched.length === 0) {
+        console.warn(`[IR-RX] HIT from unknown shooter (hash ${hashHex}) — no roster match`);
+        return;
+      }
+
+      if (matched.length > 1) {
+        console.warn(
+          `[IR-RX] HIT hash ${hashHex} collides with ${matched.length} players — using first match`
+        );
+      }
+
+      const shooter = matched[0];
+      if (shooter.id === myPlayerId) return;
+
+      console.log(
+        `[IR-RX] HIT by "${shooter.displayName}" (hash ${hashHex}) for ${damage} damage`
+      );
+
+      registerHit({ sessionId, shooterId: shooter.id, targetId: myPlayerId })
+        .catch(error => console.warn('[IR] Hit rejected:', error.message));
+    }
+  );
+}
+
+// Each board owns its subscription, disconnect listener, and retry timer.
+// A lifecycle token prevents late async completions from reviving a finished game.
+function isCurrent(run) { return lifecycle === run && !run.stopped; }
+
+function notificationFailed(run, role, device, error) {
+  // Defer until monitorCharacteristicForService has returned its subscription.
+  Promise.resolve().then(() => {
+    if (!isCurrent(run) || run[role].device !== device) return;
+    lost(run, role, error);
+    device.cancelConnection().catch(() => {});
+  });
+}
+
+function publish(run) {
+  if (!isCurrent(run)) return;
+  txConnected = !!run.tx.device;
+  rxConnected = !!run.rx.device;
+  updateCombinedStatus();
+}
+
+function removeListeners(slot) {
+  slot.subscription?.remove();
+  slot.disconnect?.remove();
+  slot.subscription = null;
+  slot.disconnect = null;
+}
+
+function retry(run, role) {
+  const slot = run[role];
+  if (!isCurrent(run) || slot.timer || slot.busy || slot.device) return;
+  const delay = Math.min(1000 * 2 ** Math.min(slot.attempt++, 4), 10000);
+  slot.timer = setTimeout(() => {
+    slot.timer = null;
+    connectRole(run, role);
+  }, delay);
+}
+
+function lost(run, role, error) {
+  if (!isCurrent(run)) return;
+  const slot = run[role];
+  console.warn(`[IR-${role.toUpperCase()}] Disconnected:`, error?.message || 'link closed');
+  removeListeners(slot);
+  slot.device = null;
+  if (role === 'tx') clearActiveTxDevice();
+  publish(run);
+  retry(run, role);
+}
+
+async function connectRole(run, role) {
+  const slot = run[role];
+  if (!isCurrent(run) || slot.busy || slot.device) return;
+  slot.busy = true;
+  let device;
+  try {
+    device = role === 'tx'
+      ? await connectTagger(savedContext.username)
+      : await scanAndVerifyDevice(savedContext.gun.receiver, RX_SERVICE_UUID);
+    if (!isCurrent(run)) return;
+    if (!device) throw new Error('Board unavailable');
+    slot.device = device;
+    slot.disconnect = bleManager.onDeviceDisconnected(device.id, error => lost(run, role, error));
+    slot.subscription = role === 'tx'
+      ? setupTxSubscription(device, savedContext)
+      : setupRxSubscription(device, RX_SERVICE_UUID, savedContext);
+    // Cover a disconnect that occurred between discovery and listener registration.
+    if (!await device.isConnected()) throw new Error('Link lost during setup');
+    if (!isCurrent(run) || slot.device !== device) return;
+    slot.attempt = 0;
+    publish(run);
+  } catch (error) {
+    if (!isCurrent(run)) return;
+    removeListeners(slot);
+    slot.device = null;
+    if (role === 'tx') clearActiveTxDevice();
+    await device?.cancelConnection().catch(() => {});
+    console.warn(`[IR-${role.toUpperCase()}] Connect failed:`, error.message);
+    publish(run);
+  } finally {
+    slot.busy = false;
+    retry(run, role);
+  }
+}
+
+export function setupIRHardware(args) {
+  const myPlayer = args.players.find(player => player.id === args.myPlayerId);
+  if (!myPlayer?.displayName || !getPairedGun()) return Promise.resolve();
+  if (lifecycle && (savedContext.sessionId !== args.sessionId || savedContext.myPlayerId !== args.myPlayerId)) {
+    teardownIRHardware();
+  }
+  onTriggerFiredCallback = args.onTriggerFired || null;
+  savedContext = { ...args, username: myPlayer.displayName,
+    hashMap: buildUsernameHashMap(args.players), gun: getPairedGun() };
+  if (lifecycle) return setupInProgress || Promise.resolve();
+  const run = { stopped: false,
+    tx: { device: null, attempt: 0, busy: false },
+    rx: { device: null, attempt: 0, busy: false } };
+  lifecycle = run;
+  bleStatus = 'connecting';
+  for (const callback of statusCallbacks) callback(bleStatus, null);
+  const operation = (async () => {
+    if (!await requestBlePermissions() || !isCurrent(run)) {
+      if (isCurrent(run)) teardownIRHardware();
+      return;
+    }
+    // The scanner serializes discovery; failures are independent per board.
+    await Promise.all([connectRole(run, 'tx'), connectRole(run, 'rx')]);
+  })().catch(error => {
+    console.warn('[IR] Setup failed:', error.message);
+    if (isCurrent(run)) teardownIRHardware();
+  }).finally(() => {
+    if (setupInProgress === operation) setupInProgress = null;
+  });
+  setupInProgress = operation;
+  return operation;
 }
 
 export function teardownIRHardware() {
-  setupAborted = true;
-  bleManager.stopDeviceScan();
-  if (hitSubscription) {
-    hitSubscription.remove();
-    hitSubscription = null;
+  const run = lifecycle;
+  lifecycle = null;
+  if (run) {
+    run.stopped = true;
+    for (const slot of [run.tx, run.rx]) {
+      clearTimeout(slot.timer);
+      removeListeners(slot);
+    }
   }
-  disconnectTagger();
-  if (rxDevice) {
-    rxDevice.cancelConnection().catch(() => {});
-    rxDevice = null;
-  }
-  clearPairedGun();
+  cancelHardwareConnections();
+  savedContext = null;
+  setupInProgress = null;
+  onTriggerFiredCallback = null;
+  txConnected = false;
+  rxConnected = false;
+  updateCombinedStatus();
 }

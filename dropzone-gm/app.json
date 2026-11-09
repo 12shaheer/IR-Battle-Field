@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DropZone GM",
-    "slug": "dropzone-gm",
+    "slug": "dropzone",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -23,8 +23,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "5e82cd46-6ad8-4db6-b1ed-95fbf18fe1d5"
+        "projectId": "aef6fa64-d16b-4f3b-a16f-17671f01a396"
       }
-    }
+    },
+    "owner": "sherryyy1231231231231s-team"
   }
 }

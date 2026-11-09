@@ -4,12 +4,14 @@
   },
   "build": {
     "preview": {
+      "env": { "DROPZONE_REQUIRE_UNITY": "1" },
       "android": {
         "buildType": "apk"
       },
       "distribution": "internal"
     },
     "production": {
+      "env": { "DROPZONE_REQUIRE_UNITY": "1" },
       "android": {
         "buildType": "app-bundle"
       }

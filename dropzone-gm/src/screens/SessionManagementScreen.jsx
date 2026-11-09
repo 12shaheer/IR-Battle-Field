@@ -116,7 +116,7 @@ export default function SessionManagementScreen({ route, navigation }) {
     );
   }
 
-  const canStart = session.status === 'lobby' && players.length >= 1;
+  const canStart = session.status === 'lobby' && (session.mode === 'team' ? Object.keys(session.teams || {}).length >= 2 : players.length >= 1);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -144,7 +144,7 @@ export default function SessionManagementScreen({ route, navigation }) {
               <Text style={styles.statLabel}>ELAPSED</Text>
               <Text style={styles.statValue}>{elapsed}</Text>
             </View>
-            <ZoneTimer nextShrinkAt={session.nextShrinkAt} />
+            {session.mode !== 'team' && <ZoneTimer nextShrinkAt={session.nextShrinkAt} />}
             <View style={styles.statBox}>
               <Text style={styles.statLabel}>ALIVE</Text>
               <Text style={styles.statValue}>
@@ -179,6 +179,7 @@ export default function SessionManagementScreen({ route, navigation }) {
         </View>
       </View>
 
+      {session.mode === 'team' && <><Text style={styles.sectionTitle}>TEAM SCORES</Text>{Object.values(session.teams || {}).sort((a, b) => b.score - a.score).map(team => <View key={team.id} style={styles.statBox}><Text style={styles.statLabel}>{team.name} · {team.playerIds.length} players</Text><Text style={styles.statValue}>{team.score} kills</Text></View>)}</>}
       {/* Live Grid */}
       <Text style={styles.sectionTitle}>LIVE GRID</Text>
       <LiveGrid
